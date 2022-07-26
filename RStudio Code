@@ -1,0 +1,1460 @@
+pacman::p_load(GeomMLBStadiums, tidyverse)
+
+player_pos <- read.csv("./player_pos.csv")
+ball_pos <- read.csv("./ball_pos.csv")
+game_info <- read.csv("./game_info.csv")
+game_events <- read.csv("./game_events.csv")
+
+
+# count whether a play is a run
+
+out_count = replicate(26315,0) # vector of counting outs
+run_count = replicate(26315,0) # vector of counting runs
+game_info_out = cbind(game_info, out_count) # combine `game_info` and out vector
+ct = 0 # set a initial counting value
+
+for (i in 1:(nrow(game_info_out)-1)) { # looping through `game_info_out`
+    if(((game_info_out$top_bottom_inning[i]==game_info_out$top_bottom_inning[i+1])|
+        (game_info_out$game_str[i]==game_info_out$game_str[i+1])) 
+       # in the same inning/ same game
+      &
+       (game_info_out$first_baserunner[i]!=game_info_out$first_baserunner[1]&
+        game_info_out$first_baserunner[i]!=game_info_out$second_baserunner[i+1]&
+        game_info_out$first_baserunner[i]!=game_info_out$first_baserunner[i+1])
+       # first base runner is not zero, not advanced to the second base, not staying in the first base
+      |
+       (game_info_out$second_baserunner[i]!=game_info_out$first_baserunner[1]&
+        game_info_out$second_baserunner[i]!=game_info_out$third_baserunner[i+1]&
+        game_info_out$second_baserunner[i]!=game_info_out$second_baserunner[i+1])
+       # second base runner is not zero, not advanced to the third base, not staying in the second base
+      |
+       (game_info_out$batter[i]!=game_info_out$batter[i+1]&
+       game_info_out$batter[i]!=game_info_out$first_baserunner[i+1]))
+      # batter is not batting or on the first base
+    {
+      ct = ct+1
+      game_info_out[i,21] <- ct # count as 1 out
+    }
+    if((game_info_out$top_bottom_inning[i]!=game_info_out$top_bottom_inning[i+1])|
+       (game_info_out$game_str[i]!=game_info_out$game_str[i+1])){
+      ct = 0 # when inning shifts, return the count to zero
+    }
+}
+
+for (j in 1:(nrow(game_info_out)-1)) {
+  if(game_info_out$top_bottom_inning[j]!=game_info_out$top_bottom_inning[j+1]|
+     game_info_out$game_str[i]!=game_info_out$game_str[i+1]){
+    game_info_out[j,21] <- 30 # three zero mark the end of inning/ game
+  }
+}
+
+for (k in 2:(nrow(game_info_out)-1)) {
+  if(game_info_out$top_bottom_inning[k]==game_info_out$top_bottom_inning[k+1]&
+     game_info_out$out_count[k]==0&
+     game_info_out$out_count[k-1]!=0){
+    game_info_out$out_count[k] <- game_info_out$out_count[k-1]
+  }
+  if(game_info_out$out_count[k-1]==30){
+    game_info_out$out_count[k] <- 0
+  }
+  if(game_info_out$out_count[k]==0&
+     game_info_out$out_count[k-1]==0){
+    game_info_out$out_count[k] <- 0
+  }
+}
+# Correspondingly change zeros remaining in the vector reasonably
+
+game_info_runCount = cbind(game_info_out,run_count) # combine `game_info_out` and run vector 
+rct = 0 # set initial value
+
+for (s in 1:(nrow(game_info_runCount)-1)) {
+  if(game_info_runCount$top_bottom_inning[s]==game_info_runCount$top_bottom_inning[s+1]&
+     # same inning
+     
+    ((game_info_runCount$third_baserunner[s]!=0&
+     game_info_runCount$third_baserunner[s+1]==0&
+     game_info_runCount$out_count[s]<30)|
+     # third base runner is not zero, not staying on the base, not ending the game
+     
+    (game_info_runCount$third_baserunner[s]!=0&
+     game_info_runCount$third_baserunner[s+1]!=game_info_runCount$third_baserunner[s]&
+     game_info_runCount$out_count[s]<30)
+    # Or third base runner is not zero, different person staying on the base, not ending the game
+    
+    )){
+    game_info_runCount$run_count[s] <- 1
+    # counted as 1 run scored
+    }
+}
+
+# count home run score and add to the previous run scored
+
+game_events_hr <- game_events%>%
+  filter(event_code == 11) # home run 
+
+hrcount = 1
+
+for (t in 1:(nrow(game_events_hr))) {
+  for (p in 1:(nrow(game_info_runCount))) {
+     if(game_info_runCount$play_per_game[p] == game_events_hr$play_per_game[t]&
+     game_info_runCount$game_str[p] == game_events_hr$game_str[t]){
+       for (x in 18:20){
+          if(game_info_runCount[p,x] != 0){
+            hrcount = hrcount + 1
+          }
+       }
+       game_info_runCount[p,22] <- hrcount + game_info_runCount[p,22]
+       hrcount = 1
+     }
+  }
+}
+
+
+# outs and bases
+
+emptybase_0outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner == 0, third_baserunner == 0, out_count == 0)
+b0_o0 = 
+(nrow(emptybase_0outs%>%filter(run_count == 1))/nrow(emptybase_0outs)*1)
+
+emptybase_1outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner == 0, third_baserunner == 0, out_count == 1)
+b0_o1 = 
+(nrow(emptybase_1outs%>%filter(run_count == 1))/nrow(emptybase_1outs)*1)
+
+emptybase_2outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner == 0, third_baserunner == 0, out_count != 0, out_count != 1)
+b0_o2 = 
+(nrow(emptybase_2outs%>%filter(run_count == 1))/nrow(emptybase_2outs)*1)
+
+fbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner == 0, third_baserunner == 0, out_count == 0)
+b1_o0 = 0
+
+fbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner == 0, third_baserunner == 0, out_count == 1)
+b1_o1 = 
+(nrow(fbase_1outs%>%filter(run_count == 1))/nrow(fbase_1outs)*1)+
+(nrow(fbase_1outs%>%filter(run_count == 2))/nrow(fbase_1outs)*2)
+
+fbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner == 0, third_baserunner == 0, out_count != 0, out_count != 1)
+b1_o2 = 
+(nrow(fbase_2outs%>%filter(run_count == 1))/nrow(fbase_2outs)*1)+
+(nrow(fbase_2outs%>%filter(run_count == 2))/nrow(fbase_2outs)*2)
+
+sbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner != 0, third_baserunner == 0, out_count == 0)
+b2_o0 = 0
+
+sbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner != 0, third_baserunner == 0, out_count == 1)
+b2_o1 = 
+(nrow(sbase_1outs%>%filter(run_count == 1))/nrow(sbase_1outs)*1)+
+(nrow(sbase_1outs%>%filter(run_count == 2))/nrow(sbase_1outs)*2)
+
+sbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner != 0, third_baserunner == 0, out_count != 0, out_count != 1)
+b2_o2 = 
+(nrow(sbase_2outs%>%filter(run_count == 1))/nrow(sbase_2outs)*1)+
+(nrow(sbase_2outs%>%filter(run_count == 2))/nrow(sbase_2outs)*2)
+
+tbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner == 0, third_baserunner != 0, out_count == 0)
+b3_o0 = 
+(nrow(tbase_0outs%>%filter(run_count == 1))/nrow(tbase_0outs)*1)
+
+tbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner == 0, third_baserunner != 0, out_count == 1)
+b3_o1 =
+(nrow(tbase_1outs%>%filter(run_count == 1))/nrow(tbase_1outs)*1)
+
+tbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner == 0, third_baserunner != 0, out_count != 0, out_count != 1)
+b3_o2 = 
+(nrow(tbase_2outs%>%filter(run_count == 1))/nrow(tbase_2outs)*1)+
+(nrow(tbase_2outs%>%filter(run_count == 2))/nrow(tbase_2outs)*2)
+
+fsbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner != 0, third_baserunner == 0, out_count == 0)
+b12_o0 = 0
+
+fsbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner != 0, third_baserunner == 0, out_count == 1)
+b12_o1 = 
+(nrow(fsbase_1outs%>%filter(run_count == 1))/nrow(fsbase_1outs)*1)+
+(nrow(fsbase_1outs%>%filter(run_count == 2))/nrow(fsbase_1outs)*2)+
+(nrow(fsbase_1outs%>%filter(run_count == 3))/nrow(fsbase_1outs)*3)
+
+fsbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner != 0, third_baserunner == 0, out_count != 0, out_count != 1)
+b12_o2 = 
+(nrow(fsbase_2outs%>%filter(run_count == 1))/nrow(fsbase_2outs)*1)+
+(nrow(fsbase_2outs%>%filter(run_count == 2))/nrow(fsbase_2outs)*2)+
+(nrow(fsbase_2outs%>%filter(run_count == 3))/nrow(fsbase_2outs)*3)
+
+ftbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner == 0, third_baserunner != 0, out_count == 0)
+b13_o0 = (nrow(ftbase_0outs%>%filter(run_count == 1))/nrow(ftbase_0outs)*1)
+
+ftbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner == 0, third_baserunner != 0, out_count == 1)
+b13_o1 = 
+(nrow(ftbase_1outs%>%filter(run_count == 1))/nrow(ftbase_1outs)*1)
+
+ftbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner == 0, third_baserunner != 0, out_count != 0, out_count != 1)
+b13_o2 = 
+(nrow(ftbase_2outs%>%filter(run_count == 1))/nrow(ftbase_2outs)*1)+
+(nrow(ftbase_2outs%>%filter(run_count == 2))/nrow(ftbase_2outs)*2)+
+(nrow(ftbase_2outs%>%filter(run_count == 3))/nrow(ftbase_2outs)*3)+
+(nrow(ftbase_2outs%>%filter(run_count == 4))/nrow(ftbase_2outs)*4)
+
+stbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner != 0, third_baserunner != 0, out_count == 0)
+b23_o0 = (nrow(stbase_0outs%>%filter(run_count == 1))/nrow(stbase_0outs)*1)
+
+stbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner != 0, third_baserunner != 0, out_count == 1)
+b23_o1 = 
+(nrow(stbase_1outs%>%filter(run_count == 1))/nrow(stbase_1outs)*1)+
+(nrow(stbase_1outs%>%filter(run_count == 2))/nrow(stbase_1outs)*2)+
+(nrow(stbase_1outs%>%filter(run_count == 3))/nrow(stbase_1outs)*3)
+
+stbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner == 0, second_baserunner != 0, third_baserunner != 0, out_count != 0, out_count != 1)
+b23_o2 = 
+(nrow(stbase_2outs%>%filter(run_count == 1))/nrow(stbase_2outs)*1)+
+(nrow(stbase_2outs%>%filter(run_count == 2))/nrow(stbase_2outs)*2)+
+(nrow(stbase_2outs%>%filter(run_count == 3))/nrow(stbase_2outs)*3)+
+(nrow(stbase_2outs%>%filter(run_count == 4))/nrow(stbase_2outs)*4)
+
+fullbase_0outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner != 0, third_baserunner != 0, out_count == 0)
+b123_o0 = (nrow(fullbase_0outs%>%filter(run_count == 1))/nrow(fullbase_0outs)*1)
+
+fullbase_1outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner != 0, third_baserunner != 0, out_count == 1)
+b123_o1 = 
+(nrow(fullbase_1outs%>%filter(run_count == 1))/nrow(fullbase_1outs)*1)
+
+fullbase_2outs <- game_info_runCount%>%
+  filter(first_baserunner != 0, second_baserunner != 0, third_baserunner != 0, out_count != 0, out_count != 1)
+b123_o2 = 
+(nrow(fullbase_2outs%>%filter(run_count == 1))/nrow(fullbase_2outs)*1)+
+(nrow(fullbase_2outs%>%filter(run_count == 2))/nrow(fullbase_2outs)*2)+
+(nrow(fullbase_2outs%>%filter(run_count == 3))/nrow(fullbase_2outs)*3)+
+(nrow(fullbase_2outs%>%filter(run_count == 4))/nrow(fullbase_2outs)*4)
+
+
+# fielder initial lineup LEFT
+pl_field_left <- player_pos%>%
+  filter(player_position == 7)
+
+plays_df <- data.frame(game_str = pl_field_left$game_str[1],
+                       play_id = pl_field_left$play_id[1],
+                       timestamp = pl_field_left$timestamp[1],
+                       player_position = pl_field_left$player_position[1],
+                       field_x = pl_field_left$field_x[1],
+                       field_y = pl_field_left$field_y[1])
+
+for (i in 1:(nrow(pl_field_left)-1)) {
+  if(pl_field_left$play_id[i]!=pl_field_left$play_id[i+1]|
+     pl_field_left$game_str[i]!=pl_field_left$game_str[i+1]){
+    pl_x = data.frame(game_str = pl_field_left$game_str[i+1],
+                       play_id = pl_field_left$play_id[i+1],
+                       timestamp = pl_field_left$timestamp[i+1],
+                       player_position = pl_field_left$player_position[i+1],
+                       field_x = pl_field_left$field_x[i+1],
+                       field_y = pl_field_left$field_y[i+1])
+    plays_df = rbind(plays_df,pl_x)
+  }
+}
+
+run_count_field = replicate(27227,0)
+plays_df = cbind(plays_df,run_count_field)
+
+ggplot() +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  theme_void() +
+  geom_vline(xintercept = max(plays_df$field_x)) + 
+  geom_vline(xintercept = min(plays_df$field_x)) + 
+  geom_hline(yintercept = max(plays_df$field_y)) + 
+  geom_hline(yintercept = min(plays_df$field_y))
+
+# Left Fielder
+
+#480.2331  |  1. NA       |  2. 0       | 3. NA
+#----------|-----------------------------------------------------------
+#385.7821  |  4. 0.0465   |  5. 0.04167 | 6. 0
+#----------|-----------------------------------------------------------
+#291.3311  |  7. 0.0190   |  8. 0.0198  | 9. NA
+#----------|-----------------------------------------------------------
+#196.8801  |
+#----------|-----------------------------------------------------------
+#(94.451)  |
+###########|-174.8871 # -111.6948 # -48.5025 # 14.6898 (63.1923)
+
+plays_df_s1 <- plays_df%>%
+  filter(field_y>385.78, field_x<(-111.69))
+
+plays_df_s2 <- plays_df%>%
+  filter(field_y>385.78, field_x>(-111.69), field_x<(-48.51))
+
+for (i in 1:(nrow(plays_df_s2))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_s2$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_s2$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_s2$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_s3 <- plays_df%>%
+  filter(field_y>385.78, field_x>(-48.51), field_x<(14.69))
+
+plays_df_s4 <- plays_df%>%
+  filter(field_y<385.79, field_y>291.33, field_x<(-111.69))
+
+for (i in 1:(nrow(plays_df_s4))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_s4$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_s4$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_s4$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_s5 <- plays_df%>%
+  filter(field_y<385.79, field_y>291.33,field_x>(-111.69), field_x<(-48.51))
+
+for (i in 1:(nrow(plays_df_s5))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_s5$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_s5$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_s5$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_s6 <- plays_df%>%
+  filter(field_y<385.79, field_y>291.33,field_x>(-48.51), field_x<(14.69))
+
+for (i in 1:(nrow(plays_df_s6))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_s6$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_s6$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_s6$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+# DON'T RUN (huge for-loop)
+#plays_df_s7 <- plays_df%>%
+#  filter(field_y<291.33, field_y>196.88, field_x<(-111.69))
+
+#for (i in 1:(nrow(plays_df_s7))) {
+#  for (j in 1:(nrow(game_info_runCount))) {
+#    if(plays_df_s7$game_str[i] == game_info_runCount$game_str[j] & 
+#       plays_df_s7$play_id[i] == game_info_runCount$play_per_game[j]){
+#      plays_df_s7$run_count_field[i] <- game_info_runCount$run_count[j]
+#    }
+#  }
+#}
+
+# DON'T RUN 
+#plays_df_s8 <- plays_df%>%
+#  filter(field_y<291.33, field_y>196.88,field_x>(-111.69), field_x<(-48.51))
+
+#for (i in 1:(nrow(plays_df_s8))) {
+#  for (j in 1:(nrow(game_info_runCount))) {
+#    if(plays_df_s8$game_str[i] == game_info_runCount$game_str[j] & 
+#       plays_df_s8$play_id[i] == game_info_runCount$play_per_game[j]){
+#      plays_df_s8$run_count_field[i] <- game_info_runCount$run_count[j]
+#    }
+#  }
+#}
+
+plays_df_s9 <- plays_df%>%
+  filter(field_y<291.33, field_y>196.88,field_x>(-48.51), field_x<(14.69))
+
+plays_df_s7 <- read.csv("./plays_df_s7.csv")
+plays_df_s8 <- read.csv("./plays_df_s8.csv")
+
+# expected runs
+
+max(plays_df_s8$run_count_field)
+f4 = nrow(plays_df_s4%>%filter(run_count_field == 1))/nrow(plays_df_s4)*1
+
+f5 = nrow(plays_df_s5%>%filter(run_count_field == 1))/nrow(plays_df_s5)*1
+
+f7 = nrow(plays_df_s7%>%filter(run_count_field == 1))/nrow(plays_df_s7)*1+
+     nrow(plays_df_s7%>%filter(run_count_field == 2))/nrow(plays_df_s7)*2+
+     nrow(plays_df_s7%>%filter(run_count_field == 3))/nrow(plays_df_s7)*3+
+     nrow(plays_df_s7%>%filter(run_count_field == 4))/nrow(plays_df_s7)*4
+
+f8 = nrow(plays_df_s8%>%filter(run_count_field == 1))/nrow(plays_df_s8)*1+
+     nrow(plays_df_s8%>%filter(run_count_field == 2))/nrow(plays_df_s8)*2+
+     nrow(plays_df_s8%>%filter(run_count_field == 3))/nrow(plays_df_s8)*3+
+     nrow(plays_df_s8%>%filter(run_count_field == 4))/nrow(plays_df_s8)*4
+     
+     
+# fielder initial lineup CENTER
+pl_field_center <- player_pos%>%
+  filter(player_position == 8)
+
+plays_df_c <- data.frame(game_str = pl_field_center$game_str[1],
+                       play_id = pl_field_center$play_id[1],
+                       timestamp = pl_field_center$timestamp[1],
+                       player_position = pl_field_center$player_position[1],
+                       field_x = pl_field_center$field_x[1],
+                       field_y = pl_field_center$field_y[1])
+
+for (i in 1:(nrow(pl_field_center)-1)) {
+  if(pl_field_center$play_id[i]!=pl_field_center$play_id[i+1]|
+     pl_field_center$game_str[i]!=pl_field_center$game_str[i+1]){
+    pl_x = data.frame(game_str = pl_field_center$game_str[i+1],
+                       play_id = pl_field_center$play_id[i+1],
+                       timestamp = pl_field_center$timestamp[i+1],
+                       player_position = pl_field_center$player_position[i+1],
+                       field_x = pl_field_center$field_x[i+1],
+                       field_y = pl_field_center$field_y[i+1])
+    plays_df_c = rbind(plays_df_c,pl_x)
+  }
+}
+
+run_count_field = replicate(27222,0)
+plays_df_c = cbind(plays_df_c,run_count_field)
+
+min(plays_df_c$field_x)
+max(plays_df_c$field_x)
+min(plays_df_c$field_y)
+max(plays_df_c$field_y)
+
+ggplot() +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  theme_void() +
+  geom_vline(xintercept = max(plays_df_c$field_x)) + 
+  geom_vline(xintercept = min(plays_df_c$field_x)) + 
+  geom_hline(yintercept = max(plays_df_c$field_y)) + 
+  geom_hline(yintercept = min(plays_df_c$field_y))
+
+
+# Center Fielder
+
+#392.9478  |  1. 0.0175   |  2. 0.0202  | 3. 0
+#----------|-----------------------------------------------------------
+#290.6606  |  4. 0.0155   |  5. 0.01765 | 6. 0
+#----------|-----------------------------------------------------------
+#188.3734  |  7. 0        |  8. 0       | 9. NA
+#----------|-----------------------------------------------------------
+#86.0862   |
+#----------|-----------------------------------------------------------
+#(102.2872)|
+###########| -66.9204 # -12.2127 # 42.495 # 97.2027 (54.7077)
+
+plays_df_c1 <- plays_df_c%>%
+  filter(field_y>290.66, field_x<(-12.21))
+
+#for (i in 1:(nrow(plays_df_c1))) {
+# for (j in 1:(nrow(game_info_runCount))) {
+#   if(plays_df_c1$game_str[i] == game_info_runCount$game_str[j] & 
+#       plays_df_c1$play_id[i] == game_info_runCount$play_per_game[j]){
+#      plays_df_c1$run_count_field[i] <- game_info_runCount$run_count[j]
+#    }
+#  }
+#}
+plays_df_c1 <- read.csv("./plays_df_c1.csv")
+
+plays_df_c2 <- plays_df_c%>%
+  filter(field_y>290.66, field_x>(-12.21), field_x<(42.49))
+
+#for (i in 1:(nrow(plays_df_c2))) {
+# for (j in 1:(nrow(game_info_runCount))) {
+#   if(plays_df_c2$game_str[i] == game_info_runCount$game_str[j] & 
+#      plays_df_c2$play_id[i] == game_info_runCount$play_per_game[j]){
+#     plays_df_c2$run_count_field[i] <- game_info_runCount$run_count[j]
+#    }
+#  }
+#}
+
+plays_df_c2 <- read.csv("./plays_df_c2.csv")
+
+plays_df_c3 <- plays_df_c%>%
+  filter(field_y>290.66, field_x>(42.49))
+for (i in 1:(nrow(plays_df_c3))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_c3$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_c3$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_c3$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_c4 <- plays_df_c%>%
+  filter(field_y<290.66, field_y>188.37, field_x<(-12.21))
+
+for (i in 1:(nrow(plays_df_c4))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_c4$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_c4$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_c4$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_c5 <- plays_df_c%>%
+  filter(field_y<290.66, field_y>188.37,field_x>(-12.21), field_x<(42.49))
+
+for (i in 1:(nrow(plays_df_c5))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_c5$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_c5$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_c5$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_c6 <- plays_df_c%>%
+  filter(field_y<290.66, field_y>188.37,field_x>(42.49))
+
+for (i in 1:(nrow(plays_df_c6))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_c6$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_c6$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_c6$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+# DON'T RUN
+plays_df_c7 <- plays_df_c%>%
+  filter(field_y<188.37, field_x<(-12.21))
+
+for (i in 1:(nrow(plays_df_c7))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_c7$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_c7$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_c7$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+# DON'T RUN
+plays_df_c8 <- plays_df_c%>%
+  filter(field_y<188.37,field_x>(-12.21), field_x<(42.49))
+
+for (i in 1:(nrow(plays_df_c8))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_c8$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_c8$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_c8$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_c9 <- plays_df_c%>%
+  filter(field_y<188.37,field_x>(42.49))
+
+# expected runs
+
+max(plays_df_c8$run_count_field)
+c1 = nrow(plays_df_c1%>%filter(run_count_field == 1))/nrow(plays_df_c1)*1+
+     nrow(plays_df_c1%>%filter(run_count_field == 2))/nrow(plays_df_c1)*2+
+     nrow(plays_df_c1%>%filter(run_count_field == 3))/nrow(plays_df_c1)*3
+
+c2 = nrow(plays_df_c2%>%filter(run_count_field == 1))/nrow(plays_df_c2)*1+
+     nrow(plays_df_c2%>%filter(run_count_field == 2))/nrow(plays_df_c2)*2+
+     nrow(plays_df_c2%>%filter(run_count_field == 3))/nrow(plays_df_c2)*3+
+     nrow(plays_df_c2%>%filter(run_count_field == 4))/nrow(plays_df_c2)*4
+
+c4 = nrow(plays_df_c4%>%filter(run_count_field == 1))/nrow(plays_df_c4)*1
+
+c5 = nrow(plays_df_c5%>%filter(run_count_field == 1))/nrow(plays_df_c5)*1+
+     nrow(plays_df_c5%>%filter(run_count_field == 2))/nrow(plays_df_c5)*2
+
+
+#fielder initial lineup RIGHT
+
+pl_field_right <- player_pos%>%
+  filter(player_position == 9)
+
+plays_df_r <- data.frame(game_str = pl_field_right$game_str[1],
+                       play_id = pl_field_right$play_id[1],
+                       timestamp = pl_field_right$timestamp[1],
+                       player_position = pl_field_right$player_position[1],
+                       field_x = pl_field_right$field_x[1],
+                       field_y = pl_field_right$field_y[1])
+
+for (i in 1:(nrow(pl_field_right)-1)) {
+  if(pl_field_right$play_id[i]!=pl_field_right$play_id[i+1]|
+     pl_field_right$game_str[i]!=pl_field_right$game_str[i+1]){
+    pl_x = data.frame(game_str = pl_field_right$game_str[i+1],
+                       play_id = pl_field_right$play_id[i+1],
+                       timestamp = pl_field_right$timestamp[i+1],
+                       player_position = pl_field_right$player_position[i+1],
+                       field_x = pl_field_right$field_x[i+1],
+                       field_y = pl_field_right$field_y[i+1])
+    plays_df_r = rbind(plays_df_r,pl_x)
+  }
+}
+
+run_count_field = replicate(27218,0)
+plays_df_r = cbind(plays_df_r,run_count_field)
+
+min(plays_df_r$field_x)
+max(plays_df_r$field_x)
+min(plays_df_r$field_y)
+max(plays_df_r$field_y)
+
+ggplot() +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  theme_void() +
+  geom_vline(xintercept = max(plays_df_r$field_x)) + 
+  geom_vline(xintercept = min(plays_df_r$field_x)) + 
+  geom_hline(yintercept = max(plays_df_r$field_y)) + 
+  geom_hline(yintercept = min(plays_df_r$field_y))
+
+
+# Right Fielder
+
+#413.6352  |  1. 0        |  2. NA      | 3. 0
+#----------|-----------------------------------------------------------
+#341.8263  |  4. 0.0148   |  5. 0.01818 | 6. NA
+#----------|-----------------------------------------------------------
+#270.0174  |  7. 0.01942  |  8. 0.0216  | 9. NA
+#----------|-----------------------------------------------------------
+#198.2085  |
+#----------|-----------------------------------------------------------
+#(71.8089)|
+###########| 13.0332 # 145.3627 # 277.6922 # 410.0217 (132.3295)
+
+
+plays_df_r1 <- plays_df_r%>%
+  filter(field_y>341.82, field_x<(145.36))
+
+for (i in 1:(nrow(plays_df_r1))) {
+ for (j in 1:(nrow(game_info_runCount))) {
+   if(plays_df_r1$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_r1$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_r1$run_count_field[i] <- game_info_runCount$run_count[j]
+   }
+  }
+}
+
+plays_df_r2 <- plays_df_r%>%
+  filter(field_y>341.82, field_x>145.36, field_x<277.69)
+
+
+plays_df_r3 <- plays_df_r%>%
+  filter(field_y>341.82, field_x>277.69)
+
+for (i in 1:(nrow(plays_df_r3))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_r3$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_r3$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_r3$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_r4 <- plays_df_r%>%
+  filter(field_y<341.82, field_y>270.01, field_x<145.36)
+
+for (i in 1:(nrow(plays_df_r4))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_r4$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_r4$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_r4$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_r4 <- read.csv("./plays_df_r4.csv")
+
+plays_df_r5 <- plays_df_r%>%
+  filter(field_y<341.82, field_y>270.01,field_x>145.36, field_x<277.69)
+
+for (i in 1:(nrow(plays_df_r5))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_r5$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_r5$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_r5$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_r6 <- plays_df_r%>%
+  filter(field_y<341.82, field_y>270.01,field_x>277.69)
+
+# DON'T RUN
+plays_df_r7 <- plays_df_r%>%
+  filter(field_y<270.01, field_x<145.36)
+
+for (i in 1:(nrow(plays_df_r7))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_r7$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_r7$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_r7$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_r7 <- read.csv("./plays_df_r7.csv")
+
+# DON'T RUN
+plays_df_r8 <- plays_df_r%>%
+  filter(field_y<270.01,field_x>145.36, field_x<277.69)
+
+for (i in 1:(nrow(plays_df_r8))) {
+  for (j in 1:(nrow(game_info_runCount))) {
+    if(plays_df_r8$game_str[i] == game_info_runCount$game_str[j] & 
+       plays_df_r8$play_id[i] == game_info_runCount$play_per_game[j]){
+      plays_df_r8$run_count_field[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+plays_df_r9 <- plays_df_r%>%
+  filter(field_y<270.01,field_x>277.69)
+
+max(plays_df_r8$run_count_field)
+r4 = nrow(plays_df_r4%>%filter(run_count_field == 1))/nrow(plays_df_r4)*1+
+     nrow(plays_df_r4%>%filter(run_count_field == 2))/nrow(plays_df_r4)*2+
+     nrow(plays_df_r4%>%filter(run_count_field == 3))/nrow(plays_df_r4)*3
+
+r5 = nrow(plays_df_r5%>%filter(run_count_field == 1))/nrow(plays_df_r5)*1
+
+r7 = nrow(plays_df_r7%>%filter(run_count_field == 1))/nrow(plays_df_r7)*1+
+     nrow(plays_df_r7%>%filter(run_count_field == 2))/nrow(plays_df_r7)*2+
+     nrow(plays_df_r7%>%filter(run_count_field == 3))/nrow(plays_df_r7)*3+
+     nrow(plays_df_r7%>%filter(run_count_field == 4))/nrow(plays_df_r7)*4
+
+r8 = nrow(plays_df_r8%>%filter(run_count_field == 1))/nrow(plays_df_r8)*1
+
+
+# ball position
+
+game_bat <- game_events%>%
+  filter(player_position == 10)
+
+ball_pos_bat <- data.frame(game_str = ball_pos$game_str[0],
+                           play_id = ball_pos$play_id[0],
+                           timestamp = ball_pos$timestamp[0],
+                           ball_position_x = ball_pos$ball_position_x[0],
+                           ball_position_y = ball_pos$ball_position_y[0],
+                           ball_position_z = ball_pos$ball_position_z[0])
+
+for (i in 1:nrow(ball_pos)) {
+  if(ball_pos$timestamp[i] %in% game_bat$timestamp){
+    pl_x = data.frame(game_str = ball_pos$game_str[i],
+                           play_id = ball_pos$play_id[i],
+                          timestamp = ball_pos$timestamp[i],
+                          ball_position_x = ball_pos$ball_position_x[i],
+                           ball_position_y = ball_pos$ball_position_y[i],
+                          ball_position_z = ball_pos$ball_position_z[i])
+    ball_pos_bat = rbind(ball_pos_bat, pl_x)
+  }
+}
+
+ball_pos_bat_x <- data.frame(game_str = ball_pos_bat$game_str[0],
+                           play_id = ball_pos_bat$play_id[0],
+                           timestamp = ball_pos$timestamp[0],
+                           ball_position_x = ball_pos_bat$ball_position_x[0],
+                           ball_position_y = ball_pos_bat$ball_position_y[0],
+                           ball_position_z = ball_pos_bat$ball_position_z[0])
+
+# Don't run
+for (i in 1:nrow(ball_pos_bat)) {
+  for (j in 1:nrow(game_bat)) {
+    if(ball_pos_bat$game_str[i]==game_bat$game_str[j]&
+       ball_pos_bat$play_id[i]==game_bat$play_id[j]&
+       ball_pos_bat$timestamp[i]==game_bat$timestamp[j]){
+      pl_x = data.frame(game_str = ball_pos_bat$game_str[i],
+                           play_id = ball_pos_bat$play_id[i],
+                          timestamp = ball_pos_bat$timestamp[i],
+                          ball_position_x = ball_pos_bat$ball_position_x[i],
+                           ball_position_y = ball_pos_bat$ball_position_y[i],
+                          ball_position_z = ball_pos_bat$ball_position_z[i])
+      ball_pos_bat_x = rbind(ball_pos_bat_x, pl_x)
+    }
+  }
+}
+
+run_count_bat = replicate(nrow(ball_pos_bat_x), 0)
+ball_pos_bat_x = cbind(ball_pos_bat_x, run_count_bat)
+
+# Don't Run
+for (i in 1:nrow(ball_pos_bat_x)) {
+  for (j in 1:nrow(game_info_runCount)) {
+    if(ball_pos_bat_x$game_str[i]==game_info_runCount$game_str[j]&
+       ball_pos_bat_x$play_id[i]==game_info_runCount$play_per_game[j]){
+      ball_pos_bat_x$run_count_bat[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+ball_pos_Nbat <- data.frame(game_str = ball_pos$game_str[0],
+                           play_id = ball_pos$play_id[0],
+                           timestamp = ball_pos$timestamp[0],
+                           ball_position_x = ball_pos$ball_position_x[0],
+                           ball_position_y = ball_pos$ball_position_y[0],
+                           ball_position_z = ball_pos$ball_position_z[0])
+
+for (i in 1:(nrow(ball_pos)-1)) {
+  if(ball_pos$play_id[i]!=ball_pos$play_id[i+1]){
+    pl_x = data.frame(game_str = ball_pos$game_str[i],
+                           play_id = ball_pos$play_id[i],
+                          timestamp = ball_pos$timestamp[i],
+                          ball_position_x = ball_pos$ball_position_x[i],
+                           ball_position_y = ball_pos$ball_position_y[i],
+                          ball_position_z = ball_pos$ball_position_z[i])
+    ball_pos_Nbat = rbind(ball_pos_Nbat,pl_x)
+  }
+}
+ball_pos_Nbat = rbind(ball_pos_Nbat, ball_pos[785041,])
+
+ball_pos_Nbat_x <- data.frame(game_str = ball_pos_Nbat$game_str[0],
+                           play_id = ball_pos_Nbat$play_id[0],
+                           timestamp = ball_pos_Nbat$timestamp[0],
+                           ball_position_x = ball_pos_Nbat$ball_position_x[0],
+                           ball_position_y = ball_pos_Nbat$ball_position_y[0],
+                           ball_position_z = ball_pos_Nbat$ball_position_z[0])
+
+t = 1
+
+for (i in 1:nrow(ball_pos_Nbat)) {
+  if(ball_pos_Nbat$play_id[i]!=ball_pos_bat_x$play_id[t]){
+    pl_x = data.frame(game_str = ball_pos_Nbat$game_str[i],
+                           play_id = ball_pos_Nbat$play_id[i],
+                          timestamp = ball_pos_Nbat$timestamp[i],
+                          ball_position_x = ball_pos_Nbat$ball_position_x[i],
+                           ball_position_y = ball_pos_Nbat$ball_position_y[i],
+                          ball_position_z = ball_pos_Nbat$ball_position_z[i])
+    ball_pos_Nbat_x = rbind(ball_pos_Nbat_x, pl_x)
+  } else if(ball_pos_Nbat$play_id[i]==ball_pos_bat_x$play_id[t]){
+    t = t+1
+  }
+}
+
+run_count_Nbat = replicate(24136, 0)
+ball_pos_Nbat_x = cbind(ball_pos_Nbat_x, run_count_Nbat)
+
+# Don't run
+for (i in 1:nrow(ball_pos_Nbat_x)) {
+  for (j in 1:nrow(game_info_runCount)) {
+    if(ball_pos_Nbat_x$game_str[i]==game_info_runCount$game_str[j]&
+       ball_pos_Nbat_x$play_id[i]==game_info_runCount$play_per_game[j]){
+      ball_pos_Nbat_x$run_count_Nbat[i] <- game_info_runCount$run_count[j]
+    }
+  }
+}
+
+ball_pos_bat_x <- read.csv("./ball_pos_bat_x.csv")
+ball_pos_Nbat_x <- read.csv("./ball_pos_Nbat_x.csv")
+
+
+# Pitching (ball position)
+
+max(ball_pos_bat_x$ball_position_z)
+min(ball_pos_bat_x$ball_position_z)
+
+(64.6368+3.36414)/3
+64.6368-2*22.66698
+(7.7007+1.715223)/3
+7.7007-2*3.138641
+
+# Calculate the boundary and divide into 3*3
+
+#Bat
+#
+# 7.7007    | 0.18182 | NA      | 0 
+#
+# 4.562059  | 0.03531 | 0       | 0
+#
+# 1.423418  | 0.02484 | NA      | 0
+#
+# -1.71522
+###########-3.36414 | 19.30284 | 41.96982 | 64.6368 (22.66698)
+# (3.138641)
+
+# Filter by each boundary and calculate the expected run
+
+ball_bat1 <- ball_pos_bat_x%>%
+  filter(ball_position_x<19.303, ball_position_z>4.562)
+max(ball_bat1$run_count_bat) # calculate the max run in each boundary
+bat1 = nrow(ball_bat1%>%filter(run_count_bat == 1))/nrow(ball_bat1)*1
+
+ball_bat2 <- ball_pos_bat_x%>%
+  filter(ball_position_x>19.303, ball_position_x<41.969, ball_position_z>4.562)
+#NA
+
+ball_bat3 <- ball_pos_bat_x%>%
+  filter(ball_position_x>41.969, ball_position_z>4.562)
+#0
+
+ball_bat4 <- ball_pos_bat_x%>%
+  filter(ball_position_x<19.303, ball_position_z<4.562, ball_position_z>1.423)
+bat4 = nrow(ball_bat4%>%filter(run_count_bat == 1))/nrow(ball_bat4)*1+
+  nrow(ball_bat4%>%filter(run_count_bat == 2))/nrow(ball_bat4)*2+
+  nrow(ball_bat4%>%filter(run_count_bat == 3))/nrow(ball_bat4)*3+
+  nrow(ball_bat4%>%filter(run_count_bat == 4))/nrow(ball_bat4)*4
+
+ball_bat5 <- ball_pos_bat_x%>%
+  filter(ball_position_x>19.303, ball_position_x<41.969, ball_position_z<4.562, ball_position_z>1.423)
+#0
+
+ball_bat6 <- ball_pos_bat_x%>%
+  filter(ball_position_x>41.969, ball_position_z<4.562, ball_position_z>1.423)
+#0
+
+ball_bat7 <- ball_pos_bat_x%>%
+  filter(ball_position_x<19.303, ball_position_z<1.423)
+bat7 = nrow(ball_bat7%>%filter(run_count_bat == 1))/nrow(ball_bat7)*1+
+  nrow(ball_bat7%>%filter(run_count_bat == 2))/nrow(ball_bat7)*2+
+  nrow(ball_bat7%>%filter(run_count_bat == 3))/nrow(ball_bat7)*3+
+  nrow(ball_bat7%>%filter(run_count_bat == 4))/nrow(ball_bat7)*4
+
+ball_bat8 <- ball_pos_bat_x%>%
+  filter(ball_position_x>19.303, ball_position_x<41.969, ball_position_z<1.423)
+#NA
+
+ball_bat9 <- ball_pos_bat_x%>%
+  filter(ball_position_x>41.969, ball_position_z<1.423)
+max(ball_bat9$run_count_bat)
+#0
+
+
+
+# Nbat (not hit by batter)
+
+max(ball_pos_Nbat_x$ball_position_x)
+min(ball_pos_Nbat_x$ball_position_x)
+
+(38.6163+24.18084)/3
+38.6163-2*20.93238
+
+# Nbat
+#
+# 38.6163   1.25    | NA      | 1.5
+#
+# 17.68392  0.01763 | 0.01185 | 0.02171
+#
+# -3.24846  0.66667 | NA      | 0 
+#
+# -24.1808 
+########## -0.6996| -0.0851| 0.5294 | 1.1439 (0.6145)
+# (20.93238)
+
+summary(ball_pos_Nbat_x)
+(1.1439+0.6996)/3
+# 1st quarter: -0.6996. 3rd quarter: 1.1439 
+# extremely large value could be preventing stealing bases
+
+ball_Nbat1 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x<(-0.0851), ball_position_z>17.68392)
+Nbat1 = nrow(ball_Nbat1%>%filter(run_count_Nbat == 1))/nrow(ball_Nbat1)*1+
+  nrow(ball_Nbat1%>%filter(run_count_Nbat == 2))/nrow(ball_Nbat1)*2
+
+ball_Nbat2 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x>(-0.0851), ball_position_x<0.5294, ball_position_z>17.68392)
+#NA
+
+ball_Nbat3 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x>0.5294, ball_position_z>17.68392)
+Nbat3 = nrow(ball_Nbat3%>%filter(run_count_Nbat == 1))/nrow(ball_Nbat3)*1+
+  nrow(ball_Nbat3%>%filter(run_count_Nbat == 2))/nrow(ball_Nbat3)*2+
+  nrow(ball_Nbat3%>%filter(run_count_Nbat == 3))/nrow(ball_Nbat3)*3
+
+ball_Nbat4 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x<(-0.0851), ball_position_z<17.68392, ball_position_z>(-3.24846))
+max(ball_Nbat4$run_count_Nbat)
+Nbat4 = nrow(ball_Nbat4%>%filter(run_count_Nbat == 1))/nrow(ball_Nbat4)*1+
+  nrow(ball_Nbat4%>%filter(run_count_Nbat == 2))/nrow(ball_Nbat4)*2+
+  nrow(ball_Nbat4%>%filter(run_count_Nbat == 3))/nrow(ball_Nbat4)*3+
+  nrow(ball_Nbat4%>%filter(run_count_Nbat == 4))/nrow(ball_Nbat4)*4
+
+ball_Nbat5 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x>(-0.0851), ball_position_x<0.5294, ball_position_z<17.68392, ball_position_z>(-3.24846))
+#0
+max(ball_Nbat5$run_count_Nbat)
+Nbat5 = nrow(ball_Nbat5%>%filter(run_count_Nbat == 1))/nrow(ball_Nbat5)*1+
+  nrow(ball_Nbat5%>%filter(run_count_Nbat == 2))/nrow(ball_Nbat5)*2+
+  nrow(ball_Nbat5%>%filter(run_count_Nbat == 3))/nrow(ball_Nbat5)*3+
+  nrow(ball_Nbat5%>%filter(run_count_Nbat == 4))/nrow(ball_Nbat5)*4
+
+ball_Nbat6 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x>0.5294, ball_position_z<17.68392, ball_position_z>(-3.24846))
+max(ball_Nbat6$run_count_Nbat)
+Nbat6 = nrow(ball_Nbat6%>%filter(run_count_Nbat == 1))/nrow(ball_Nbat6)*1+
+  nrow(ball_Nbat6%>%filter(run_count_Nbat == 2))/nrow(ball_Nbat6)*2+
+  nrow(ball_Nbat6%>%filter(run_count_Nbat == 3))/nrow(ball_Nbat6)*3+
+  nrow(ball_Nbat6%>%filter(run_count_Nbat == 4))/nrow(ball_Nbat6)*4
+
+ball_Nbat7 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x<(-0.0851), ball_position_z<(-3.24846))
+max(ball_Nbat7$run_count_Nbat)
+Nbat7 = nrow(ball_Nbat7%>%filter(run_count_Nbat == 1))/nrow(ball_Nbat7)*1+
+  nrow(ball_Nbat7%>%filter(run_count_Nbat == 2))/nrow(ball_Nbat7)*2
+
+ball_Nbat8 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x>(-0.0851), ball_position_x<0.5294, ball_position_z<(-3.24846))
+#NA
+
+ball_Nbat9 <- ball_pos_Nbat_x%>%
+  filter(ball_position_x>0.5294, ball_position_z<(-3.24846))
+max(ball_bat9$run_count_bat)
+#0
+
+
+# Get run counts for ball position data
+
+run_count = replicate(27271,0)
+ball_pos_Nbat = cbind(ball_pos_Nbat, run_count)
+
+for (k in 1:nrow(ball_pos_Nbat)) {
+  for (t in 1:nrow(game_info_runCount)) {
+    if(ball_pos_Nbat$play_id[k] == game_info_runCount$play_per_game[t]&
+     ball_pos_Nbat$game_str[k] == game_info_runCount$game_str[t]){
+    ball_pos_Nbat$run_count[k] <- game_info_runCount$run_count[t]
+  } 
+  }
+}
+
+run = replicate(785041,0)
+ball_pos_run = cbind(ball_pos, run)
+
+p = 1
+for (q in 2:nrow(ball_pos_run)) {
+  if (ball_pos_run$play_id[q]!=ball_pos_run$play_id[q-1]){
+    p = p+1
+  }
+  if(ball_pos_Nbat$game_str[p] == ball_pos_run$game_str[q]&
+     ball_pos_Nbat$play_id[p] == ball_pos_run$play_id[q]){
+    ball_pos_run$run[q] <- ball_pos_Nbat$run_count[p]
+  }
+}
+
+ball_pos_run <- read.csv("./ball_pos_run.csv")
+
+
+# Formula used on player No. 7225
+game7225 <- game_info_runCount%>%
+  filter(batter == 7225)
+
+b0_0 = 0
+b0_1 = 0
+b0_2 = 0
+b1_0 = 0
+b1_1 = 0
+b1_2 = 0
+b2_0 = 0
+b2_1 = 0
+b2_2 = 0
+b3_0 = 0
+b3_1 = 0
+b3_2 = 0
+b12_0 = 0
+b12_1 = 0
+b12_2 = 0
+b23_0 = 0
+b23_1 = 0
+b23_2 = 0
+b13_0 = 0
+b13_1 = 0
+b13_2 = 0
+b123_0 = 0
+b123_1 = 0
+b123_2 = 0
+
+for (i in 1:nrow(game7225)) {
+  if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 0){
+    b0_0 = b0_0+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 1){
+    b0_1 = b0_1+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] > 1){
+    b0_2 = b0_2+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 0){
+    b1_0 = b1_0+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 1){
+    b1_1 = b1_1+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] > 1){
+    b1_2 = b1_2+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 0){
+    b12_0 = b12_0+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 1){
+    b12_1 = b12_1+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] > 1){
+    b12_2 = b12_2+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 0){
+    b123_0 = b123_0+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 1){
+    b123_1 = b123_1+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] > 1){
+    b123_2 = b123_2+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 0){
+    b2_0 = b2_0+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] == 1){
+    b2_1 = b2_1+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] == 0 & game7225$out_count[i] > 1){
+    b2_2 = b2_2+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 0){
+    b23_0 = b23_0+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 1){
+    b23_1 = b23_1+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] != 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] > 1){
+    b23_2 = b23_2+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 0){
+    b3_0 = b3_0+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 1){
+    b3_1 = b3_1+1
+  }else if(game7225$first_baserunner[i] == 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] > 1){
+    b3_2 = b3_2+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 0){
+    b13_0 = b13_0+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] == 1){
+    b13_1 = b13_1+1
+  }else if(game7225$first_baserunner[i] != 0 & game7225$second_baserunner[i] == 0 & game7225$third_baserunner[i] != 0 & game7225$out_count[i] > 1){
+    b13_2 = b13_2+1
+  }
+}
+
+AvRe_batter = ((b0_o0*b0_0+b0_o1*b0_1+b0_o2*b0_2)+(b1_o0*b1_0+b1_o1*b1_1+b1_o2*b1_2)+(b2_o0*b2_0+b2_o1*b2_1+b2_o2*b2_2)+(b12_o0*b12_0+b12_o1*b12_1+b12_o2*b12_2)+(b13_o0*b13_0+b13_o1*b13_1+b13_o2*b13_2)+(b123_o0*b123_0+b123_o1*b123_1+b123_o2*b123_2)+(b23_o0*b23_0+b23_o1*b23_1+b23_o2*b23_2)+(b3_o0*b3_0+b3_o1*b3_1+b3_o2*b3_2))/46
+
+ball_pos_bat_y <- data.frame(game_str = ball_pos_bat_x$game_str[0],
+                           play_id = ball_pos_bat_x$play_id[0],
+                           timestamp = ball_pos_bat_x$timestamp[0],
+                           ball_position_x = ball_pos_bat_x$ball_position_x[0],
+                           ball_position_y = ball_pos_bat_x$ball_position_y[0],
+                           ball_position_z = ball_pos_bat_x$ball_position_z[0])
+
+ball_pos_Nbat_y <- data.frame(game_str = ball_pos_Nbat_x$game_str[0],
+                           play_id = ball_pos_Nbat_x$play_id[0],
+                           timestamp = ball_pos_Nbat_x$timestamp[0],
+                           ball_position_x = ball_pos_Nbat_x$ball_position_x[0],
+                           ball_position_y = ball_pos_Nbat_x$ball_position_y[0],
+                           ball_position_z = ball_pos_Nbat_x$ball_position_z[0])
+
+for (s in 1:nrow(game7225)) {
+  for (t in 1:nrow(ball_pos_bat_x)) {
+    if(ball_pos_bat_x$game_str[t] == game7225$game_str[s]&
+       ball_pos_bat_x$play_id[t] == game7225$play_per_game[s]){
+      ball_x = data.frame(game_str = ball_pos_bat_x$game_str[t],
+                           play_id = ball_pos_bat_x$play_id[t],
+                           timestamp = ball_pos_bat_x$timestamp[t],
+                           ball_position_x = ball_pos_bat_x$ball_position_x[t],
+                           ball_position_y = ball_pos_bat_x$ball_position_y[t],
+                           ball_position_z = ball_pos_bat_x$ball_position_z[t])
+      ball_pos_bat_y = rbind(ball_pos_bat_y,ball_x)
+    }
+  }
+}
+for (s in 1:nrow(game7225)) {
+  for (t in 1:nrow(ball_pos_Nbat_x)) {
+    if(ball_pos_Nbat_x$game_str[t] == game7225$game_str[s]&
+       ball_pos_Nbat_x$play_id[t] == game7225$play_per_game[s]){
+      ball_x = data.frame(game_str = ball_pos_Nbat_x$game_str[t],
+                           play_id = ball_pos_Nbat_x$play_id[t],
+                           timestamp = ball_pos_Nbat_x$timestamp[t],
+                           ball_position_x = ball_pos_Nbat_x$ball_position_x[t],
+                           ball_position_y = ball_pos_Nbat_x$ball_position_y[t],
+                           ball_position_z = ball_pos_Nbat_x$ball_position_z[t])
+      ball_pos_Nbat_y = rbind(ball_pos_Nbat_y,ball_x)
+    }
+  }
+}
+ball_pos_bat_y = ball_pos_bat_y[-c(2,4,6,8,10,12,14,16,18,20,22,24),]
+
+bat_a1 = 0
+bat_a2 = 0
+bat_a3 = 0
+bat_a4 = 0
+bat_a5 = 0
+bat_a6 = 0
+bat_a7 = 0
+bat_a8 = 0
+bat_a9 = 0
+
+for (i in 1:nrow(ball_pos_bat_y)) {
+  if(ball_pos_bat_y$ball_position_x[i]<19.303&ball_pos_bat_y$ball_position_z[i]>4.562){bat_a1=bat_a1+1}
+  else if(ball_pos_bat_y$ball_position_x[i]>19.303&ball_pos_bat_y$ball_position_x[i]<41.969&ball_pos_bat_y$ball_position_z[i]>4.562){bat_a2=bat_a2+1}
+  else if(ball_pos_bat_y$ball_position_x[i]>41.969&ball_pos_bat_y$ball_position_z[i]>4.562){bat_a3=bat_a3+1}
+  else if(ball_pos_bat_y$ball_position_x[i]<19.303&ball_pos_bat_y$ball_position_z[i]<4.562&ball_pos_bat_y$ball_position_z[i]>1.423){bat_a4=bat_a4+1}
+  else if(ball_pos_bat_y$ball_position_x[i]>19.303&ball_pos_bat_y$ball_position_x[i]<41.969&ball_pos_bat_y$ball_position_z[i]<4.562&ball_pos_bat_y$ball_position_z[i]>1.423){bat_a5=bat_a5+1}
+  else if(ball_pos_bat_y$ball_position_x[i]>41.969&ball_pos_bat_y$ball_position_z[i]<4.562&ball_pos_bat_y$ball_position_z[i]>1.423){bat_a6=bat_a6+1}
+  else if(ball_pos_bat_y$ball_position_x[i]<19.303&ball_pos_bat_y$ball_position_z[i]<1.423){bat_a7=bat_a7+1}
+  else if(ball_pos_bat_y$ball_position_x[i]>19.303&ball_pos_bat_y$ball_position_x[i]<41.969&ball_pos_bat_y$ball_position_z[i]<1.423){bat_a8=bat_a8+1}
+  else if(ball_pos_bat_y$ball_position_x[i]>41.969&ball_pos_bat_y$ball_position_z[i]<1.423){bat_a9=bat_a9+1}
+}
+
+Nbat_a1 = 0
+Nbat_a2 = 0
+Nbat_a3 = 0
+Nbat_a4 = 0
+Nbat_a5 = 0
+Nbat_a6 = 0
+Nbat_a7 = 0
+Nbat_a8 = 0
+Nbat_a9 = 0
+
+for (i in 1:nrow(ball_pos_Nbat_y)) {
+  if(ball_pos_Nbat_y$ball_position_x[i]<(-0.0851)&ball_pos_Nbat_y$ball_position_z[i]>17.68392){Nbat_a1=Nbat_a1+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]>(-0.0851)&ball_pos_Nbat_y$ball_position_x[i]<0.5294& ball_pos_Nbat_y$ball_position_z[i]>17.68392){Nbat_a2=Nbat_a2+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]>0.5294&ball_pos_Nbat_y$ball_position_z[i]>17.68392){Nbat_a3=Nbat_a3+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]<(-0.0851)&ball_pos_Nbat_y$ball_position_z[i]<17.68392& ball_pos_Nbat_y$ball_position_z[i]>(-3.24846)){Nbat_a4=Nbat_a4+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]>(-0.0851)&ball_pos_Nbat_y$ball_position_x[i]<0.5294& ball_pos_Nbat_y$ball_position_z[i]<17.68392&ball_pos_Nbat_y$ball_position_z[i]>(-3.24846)){Nbat_a5=Nbat_a5+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]>0.5294&ball_pos_Nbat_y$ball_position_z[i]<17.68392& ball_pos_Nbat_y$ball_position_z[i]>(-3.24846)){Nbat_a6=Nbat_a6+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]<(-0.0851)&ball_pos_Nbat_y$ball_position_z[i]<(-3.24846)){Nbat_a7=Nbat_a7+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]>(-0.0851)&ball_pos_Nbat_y$ball_position_x[i]<0.5294& ball_pos_Nbat_y$ball_position_z[i]<(-3.24846)){Nbat_a8=Nbat_a8+1}
+  else if(ball_pos_Nbat_y$ball_position_x[i]>0.5294&ball_pos_Nbat_y$ball_position_z[i]<(-3.24846)){Nbat_a9=Nbat_a9+1}
+}
+
+AvRe_pitcher = (Nbat4*Nbat_a4+Nbat5*Nbat_a5+Nbat6*Nbat_a6)/(51+3+12)+bat_a4*bat4/12
+
+#field
+t = 1
+ball_field <- data.frame(game_str = ball_pos$game_str[0],
+                           play_id = ball_pos$play_id[0],
+                           timestamp = ball_pos$timestamp[0],
+                           ball_position_x = ball_pos$ball_position_x[0],
+                           ball_position_y = ball_pos$ball_position_y[0],
+                           ball_position_z = ball_pos$ball_position_z[0])
+
+for (t in 1:nrow(game7225)) {
+  for (i in 1:nrow(ball_pos)) {
+    if(game7225$game_str[t] == ball_pos$game_str[i]&
+     game7225$play_per_game[t] == ball_pos$play_id[i]){
+    ball_f = data.frame(game_str = ball_pos$game_str[i],
+                           play_id = ball_pos$play_id[i],
+                           timestamp = ball_pos$timestamp[i],
+                           ball_position_x = ball_pos$ball_position_x[i],
+                           ball_position_y = ball_pos$ball_position_y[i],
+                           ball_position_z = ball_pos$ball_position_z[i])
+    ball_field = rbind(ball_field, ball_f)
+    }
+  }
+}
+
+#01: 14 86 144
+#02: 138 141
+#03: 15 81 147
+
+((0.000050953+0.0109)/2+(0.0115+0.0109)/2+(0.0017+0.0109)/2+(0.000042036+0.000076429+0.0115)/3+0.0115+(0.000042036+0.0115)/2+(0.000076429+0.0115)/2+0.0115)/8
+
+ball_field_b <- ball_field%>%
+  filter(play_id %in% c(14, 86, 144, 138, 141, 15, 81, 147))
+ball_field_b = ball_field_b[-c(765:778),]
+
+`%!in%` <- Negate(`%in%`)
+ball_field_nb <- ball_field%>%
+  filter(play_id %!in% c(86, 144, 138, 141, 15, 81, 147))
+ball_field_nb = ball_field_nb[-c(58:288),]
+
+#14
+ggplot(ball_field_b%>%filter(play_id==14), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 6 & 8
+0.000050953+0.0109
+
+#86
+ggplot(ball_field_b%>%filter(play_id==86), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 4 & 6
+0.0115+0.0109
+
+#144
+ggplot(ball_field_b%>%filter(play_id==144), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 5 & 6
+0.0017+0.0109
+
+#138
+ggplot(ball_field_b%>%filter(play_id==138), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 1 2 4
+0.000042036+0.000076429+0.0115
+
+#141
+ggplot(ball_field_b%>%filter(play_id==141), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 4
+0.0115
+
+#15
+ggplot(ball_field_b%>%filter(play_id==15), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 1 4
+0.000042036+0.0115
+
+#81
+ggplot(ball_field_b%>%filter(play_id==81), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 2 4
+0.000076429+0.0115
+
+#147
+ggplot(ball_field_b%>%filter(play_id==147), aes(x = ball_position_x, y = ball_position_y)) +
+  geom_spraychart(stadium_transform_coords = TRUE, stadium_segments = "all") +
+  coord_fixed() +
+  geom_vline(xintercept = 0)+
+  geom_vline(xintercept = 63.649)+
+  geom_vline(xintercept = (-63.649))+
+  geom_hline(yintercept = 0)+
+  geom_hline(yintercept = 226.308)+
+  theme_void()
+# 4
+0.0115
+
+
+# nbat
+# left
+
+game7225_nbat <- game7225[-c(5,6,9,23,26,36,40,41),]
+
+plays_field_l <- data.frame(game_str = plays_df$game_str[0],
+                       play_id = plays_df$play_id[0],
+                       timestamp = plays_df$timestamp[0],
+                       player_position = plays_df$player_position[0],
+                       field_x = plays_df$field_x[0],
+                       field_y = plays_df$field_y[0])
+
+for (i in 1:nrow(game7225_nbat)) {
+  for (t in 1:nrow(plays_df)) {
+    if(game7225_nbat$game_str[i] == plays_df$game_str[t]&
+       game7225_nbat$play_per_game[i] == plays_df$play_id[t]){
+      plays_x = data.frame(game_str = plays_df$game_str[t],
+                       play_id = plays_df$play_id[t],
+                       timestamp = plays_df$timestamp[t],
+                       player_position = plays_df$player_position[t],
+                       field_x = plays_df$field_x[t],
+                       field_y = plays_df$field_y[t])
+      plays_field_l = rbind(plays_field_l, plays_x)
+    }
+  }
+}
+(31*0.019+6*0.0198)/37
+
+
+plays_field_c <- data.frame(game_str = plays_df$game_str[0],
+                       play_id = plays_df$play_id[0],
+                       timestamp = plays_df$timestamp[0],
+                       player_position = plays_df$player_position[0],
+                       field_x = plays_df$field_x[0],
+                       field_y = plays_df$field_y[0])
+
+for (i in 1:nrow(game7225_nbat)) {
+  for (t in 1:nrow(plays_df_c)) {
+    if(game7225_nbat$game_str[i] == plays_df_c$game_str[t]&
+       game7225_nbat$play_per_game[i] == plays_df_c$play_id[t]){
+      plays_x = data.frame(game_str = plays_df_c$game_str[t],
+                       play_id = plays_df_c$play_id[t],
+                       timestamp = plays_df_c$timestamp[t],
+                       player_position = plays_df_c$player_position[t],
+                       field_x = plays_df_c$field_x[t],
+                       field_y = plays_df_c$field_y[t])
+      plays_field_c = rbind(plays_field_c, plays_x)
+    }
+  }
+}
+(20*0.0202+9*0.0175+8*0.01765)/37
+
+
+plays_field_r <- data.frame(game_str = plays_df$game_str[0],
+                       play_id = plays_df$play_id[0],
+                       timestamp = plays_df$timestamp[0],
+                       player_position = plays_df$player_position[0],
+                       field_x = plays_df$field_x[0],
+                       field_y = plays_df$field_y[0])
+
+for (i in 1:nrow(game7225_nbat)) {
+  for (t in 1:nrow(plays_df_r)) {
+    if(game7225_nbat$game_str[i] == plays_df_r$game_str[t]&
+       game7225_nbat$play_per_game[i] == plays_df_r$play_id[t]){
+      plays_x = data.frame(game_str = plays_df_r$game_str[t],
+                       play_id = plays_df_r$play_id[t],
+                       timestamp = plays_df_r$timestamp[t],
+                       player_position = plays_df_r$player_position[t],
+                       field_x = plays_df_r$field_x[t],
+                       field_y = plays_df_r$field_y[t])
+      plays_field_r = rbind(plays_field_r, plays_x)
+    }
+  }
+}
+
+0.01942
+
+AvRe_fielder = 0.007675941+(0.01912973+0.01899189+0.01942)/3
+
+player_7225 = AvRe_batter/(AvRe_pitcher*AvRe_fielder)
+#4.50823 
+
+
+# Formula used on fielder evaluation 
+
+fielder5535 <- game_info_runCount%>%
+  filter(center_field == 5535)
+
+f5535 = nrow(fielder5535%>%filter(run_count == 1))/nrow(fielder5535)*1
+#0.015105
+
+AvRe_cf = (0.0026+0.0115+0.0017+0.0109)/4
+#0.006675
+
+fielder1177 <- game_info_runCount%>%
+  filter(center_field == 1177)
+max(fielder1177$run_count)
+f1177 = nrow(fielder2320%>%filter(run_count == 1))/nrow(fielder1177)*1
+
+#0.006197
