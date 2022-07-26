@@ -1,0 +1,180 @@
+clc;
+data = readmatrix("C:\Users\31019\OneDrive\##\ball_pos_run.csv");
+x = ballposrun(:, "ball_position_x");
+y = ballposrun(:, "ball_position_y");
+z = ballposrun(:, "ball_position_z");
+r = ballposrun(:, "run");
+x1 = sortrows(x,'ball_position_x','descend');
+y1 = sortrows(y,'ball_position_y','descend');
+z1 = sortrows(z,'ball_position_z','descend');
+r1 = sortrows(r,'run','descend'); % The most runs are 4.
+x_max = x1(1, 1);
+x_min = x1(end, 1);
+y_max = y1(1, 1);
+y_min = y1(end, 1);
+z_max = z1(1, 1);
+z_min = z1(end, 1);
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 1.
+for i = 2:785041
+    if data(i, 5) > 226.308 && data(i, 6) > 289.957
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+d = d + 1;
+end
+        expected_value_1 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 2.
+for i = 2:785041
+    if data(i, 5) > 226.308 && data(i, 6) < 289.957 && data(i, 6) > data(i, 5)
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+            d = d + 1;
+   1
+   end
+        expected_value_2 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 3.
+for i = 2:785041
+    if data(i, 5) > 0 && data(i, 5) < 226.308 && data(i, 6) > 289.957
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+            d = d + 1;
+end
+        expected_value_3 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 4.
+for i = 2:785041
+    if data(i, 5) > 0 && data(i, 5) < 226.308 && data(i, 6) < 289.957 &&
+ data(i, 6) > 127.298 - data(i, 5)
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+d = d + 1;
+end
+        expected_value_4 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 5.
+   2
+
+   for i = 2:785041
+    if data(i, 5) < 0 && data(i, 5) > -226.308 && data(i, 6) > 289.957
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+            d = d + 1;
+end
+        expected_value_5 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 6.
+for i = 2:785041
+    if data(i, 5) < 0 && data(i, 5) > -226.308 && data(i, 6) < 289.957 &&
+ data(i, 6) > 127.298 + data(i, 5)
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+d = d + 1;
+end
+        expected_value_6 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 7.
+for i = 2:785041
+    if data(i, 5) < -226.308 && data(i, 6) > 289.957
+        if data(i, 8) == 1
+            a = a + 1;
+        elseif data(i, 8) == 2
+            b = b + 1;
+        elseif data(i, 8) == 3
+            c = c + 1;
+        elseif data(i, 8) == 4
+            d = d + 1;
+end
+   3
+
+           expected_value_7 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
+% Calculate the expected runs in area 8.
+for i = 2:785041
+    if data(i, 5) < -226.308 && data(i, 6) < 289.957 && data(i, 6) > -data(i,
+5)
+if data(i, 8) == 1
+    a = a + 1;
+elseif data(i, 8) == 2
+    b = b + 1;
+elseif data(i, 8) == 3
+    c = c + 1;
+elseif data(i, 8) == 4
+    d = d + 1;
+end
+        expected_value_8 = (a / 785041) + (b / 785041) * 2 + (c / 785041) * 3
+ + (d / 785041) * 4;
+end end
+a = 0;
+b = 0;
+c = 0;
+d = 0;
